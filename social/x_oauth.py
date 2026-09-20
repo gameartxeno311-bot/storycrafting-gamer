@@ -200,6 +200,16 @@ def post(text):
     print(json.dumps(result, indent=2))
 
 
+def account_info():
+    """Return the currently authorized X account, or None if not connected."""
+    env = load_env()
+    client_id = env.get("X_CLIENT_ID")
+    if not client_id or not load_tokens():
+        return None
+    data = api_get("/users/me", client_id)
+    return data.get("data", {})
+
+
 def status():
     env = load_env()
     client_id = env.get("X_CLIENT_ID")
@@ -211,8 +221,7 @@ def status():
         print("X is not connected.")
         return
     try:
-        data = api_get("/users/me", client_id)
-        user = data.get("data", {})
+        user = account_info() or {}
         print(f"Connected X account: @{user.get('username', 'unknown')} ({user.get('name', 'unknown')})")
     except Exception as exc:
         print(f"X connection check failed: {exc}")
