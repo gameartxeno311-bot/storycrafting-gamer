@@ -71,6 +71,9 @@ def refresh_token(client_id, refresh):
         "client_id": client_id,
     }
     result = request_json(TOKEN_URL, method="POST", data=data)
+    if "refresh_token" not in result:
+        result["refresh_token"] = refresh
+    result["expires_at"] = int(time.time()) + int(result.get("expires_in", 7200))
     save_tokens(result)
     return result
 
