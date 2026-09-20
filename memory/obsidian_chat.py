@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, ssl, sys, urllib.request
+import json, sys, urllib.request
 from datetime import datetime
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,77 +13,123 @@ SYSTEM = "You are The Storycrafting Gamer, a fictional AI influencer focused on 
 
 def ollama(messages):
     payload = json.dumps({"model": MODEL, "messages": messages, "stream": False}).encode()
-    req = urllib.request.Request(OLLAMA, data=payload, method="POST", headers={"Content-Type":"application/json"})
-    with urllib.request.urlopen(req, timeout=300) as r: return json.loads(r.read())["message"]["content"]
+    req = urllib.request.Request(OLLAMA, data=payload, method="POST", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as response:
+        data = json.loads(response.read())
+    return data["message"]["content"]
 
 PENDING_X_FILE = ROOT / "config" / "x_pending.json"
 
 def load_x_pending():
-    if not PENDING_X_FILE.exists(): return None
+    if not PENDING_X_FILE.exists():
+        return None
     return json.loads(PENDING_X_FILE.read_text(encoding="utf-8"))
 
 def clear_x_pending():
-    try: PENDING_X_FILE.unlink()
-    except FileNotFoundError: pass
+    try:
+        PENDING_X_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+def write_x_pending(data):
+    PENDING_X_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PENDING_X_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+def current_x_account():
+    account = x_oauth.account_info()
+    if not account:
+        raise RuntimeError("No X account is connected.")
+    return account
 
 def main():
     print("The Storycrafting Gamer + Obsidian Memory")
-    print("Commands: /remember TEXT, /memory, /xstatus, /x draft TOPIC, /x approve, /x publish, /x cancel, /clear, /bye")
+    print("Commands: /remember TEXT, /memory, /xstatus, /x draft TOPIC, /x approve, /x publish, /x cancel, /x clear, /clear, /bye")
     history = []
     while True:
-        try: user = input("\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt): print(); break
-        if not user: continue
-        if user.lower() in ("/bye", "/exit", "/quit"): break
-        if user.lower() == "/clear": history = []; print("Conversation context cleared."); continue
-        if user.lower() == "/xstatus":
+        try:
+            user = input("\nYou: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not user:
+            continue
+        command = user.lower()
+
+        if command in ("/bye", "/exit", "/quit"):
+            break
+        if command == "/clear":
+            history = []
+            print("Conversation context cleared.")
+            continue
+        if command in ("/xstatus", "/x status"):
             try:
                 account = x_oauth.account_info()
-                if account:
-                    print(f"\nX account connected: @{account.get('username', 'unknown')} ({account.get('name', 'unknown')})")
-                else:
-                    print("\nNo X account is currently connected.")
-            except Exception as e:
-                print("X status error:", e)
+                pending = load_x_pending()
+                print("\nX account: @" + (account.get("username", "unknown") if account else "not connected"))
+                if pending:
+                    print("Pending draft: " + pending.get("text", ""))
+                    print("Status: " + ("approved" if pending.get("approved") else "awaiting approval"))
+            except Exception as exc:
+                print("X status error:", exc)
             continue
 
-        if user.lower().startswith("/x draft "):
+        if command.startswith("/x draft "):
+            topic = user[len("/x draft "):].strip()
+            if not topic:
+                print("X draft error: provide a topic.")
+                continue
             try:
-                memory = obsidian_memory.search_memory(user[9:].strip())
-            except Exception:
-                memory = ""
-            try:
-                account = x_oauth.account_info()
-                if not account:
-                    raise RuntimeError("No X account is connected.")
+                account = current_x_account()
+                try:
+                    memory = obsidian_memory.search_memory(topic)
+                except Exception as exc:
+                    memory = ""
+                    print("[Warning: Obsidian memory unavailable; drafting without it: " + str(exc) + "]")
                 draft = ollama([
-                    {"role":"system","content":SYSTEM + "\nDraft exactly one X post, no commentary, maximum 280 characters."},
-                    {"role":"user","content":"Draft an X post about: " + user[9:].strip() + "\nRelevant memory:\n" + memory}
+                    {"role": "system", "content": SYSTEM + "\nDraft exactly one X post, maximum 280 characters. Return only the post text. Do not invent accomplishments."},
+                    {"role": "user", "content": "Draft an X post about: " + topic + "\nRelevant memory:\n" + memory},
                 ]).strip().strip('"')
                 if len(draft) > 280:
-                    draft = draft[:277].rstrip() + "..."
-                PENDING_X_FILE.parent.mkdir(parents=True, exist_ok=True)
-                PENDING_X_FILE.write_text(json.dumps({"text":draft,"approved":False,"account":account.get("username",""),"created_at":datetime.now().astimezone().isoformat()}, indent=2), encoding="utf-8")
-                print("\nX DRAFT for @" + account.get("username","unknown") + ":")
+                    print("X draft exceeded 280 characters; asking the model to shorten it.")
+                    draft = ollama([
+                        {"role": "system", "content": SYSTEM + "\nRewrite the supplied X post to 280 characters or fewer. Return only the post text. Preserve the meaning. Do not invent accomplishments."},
+                        {"role": "user", "content": draft},
+                    ]).strip().strip('"')
+                if len(draft) > 280:
+                    raise RuntimeError("The generated draft is still over 280 characters.")
+                write_x_pending({
+                    "text": draft,
+                    "approved": False,
+                    "account": account.get("username", ""),
+                    "created_at": datetime.now().astimezone().isoformat(),
+                })
+                print("\nX DRAFT for @" + account.get("username", "unknown") + ":")
                 print(draft)
                 print("\nCharacters: " + str(len(draft)))
                 print("Approve with /x approve, then publish with /x publish.")
-            except Exception as e:
-                print("X draft error:", e)
+            except Exception as exc:
+                print("X draft error:", exc)
             continue
-        if user.lower() == "/x approve":
+
+        if command == "/x approve":
             try:
                 pending = load_x_pending()
                 if not pending:
                     print("\nNo pending X draft.")
+                elif not pending.get("text"):
+                    print("\nPending X draft is empty.")
+                elif pending.get("approved"):
+                    print("\nX draft is already approved. Publish with /x publish.")
                 else:
                     pending["approved"] = True
-                    PENDING_X_FILE.write_text(json.dumps(pending, indent=2), encoding="utf-8")
+                    pending["approved_at"] = datetime.now().astimezone().isoformat()
+                    write_x_pending(pending)
                     print("\nX draft approved. Publish with /x publish.")
-            except Exception as e:
-                print("X approval error:", e)
+            except Exception as exc:
+                print("X approval error:", exc)
             continue
-        if user.lower() == "/x publish":
+
+        if command == "/x publish":
             try:
                 pending = load_x_pending()
                 if not pending:
@@ -91,54 +137,76 @@ def main():
                 elif not pending.get("approved"):
                     print("\nThis draft has not been approved. Use /x approve first.")
                 else:
-                    result = x_oauth.post(pending["text"])
+                    account = current_x_account()
+                    expected = pending.get("account", "")
+                    actual = account.get("username", "")
+                    if expected and expected.lower() != actual.lower():
+                        raise RuntimeError("The connected X account changed since this draft was created. Create a new draft before publishing.")
+                    text = pending.get("text", "").strip()
+                    if not text:
+                        raise RuntimeError("Pending X draft is empty.")
+                    if len(text) > 280:
+                        raise RuntimeError("Pending X draft exceeds 280 characters.")
+                    result = x_oauth.post(text)
+                    post_id = result.get("data", {}).get("id")
+                    if not post_id:
+                        raise RuntimeError("X API returned no post ID; pending draft was kept.")
                     clear_x_pending()
                     print("\nX post published successfully.")
-                    print("Post ID: " + str(result.get("data", {}).get("id", "unknown")))
-            except Exception as e:
-                print("X publish error:", e)
+                    print("Post ID: " + str(post_id))
+            except Exception as exc:
+                print("X publish error: " + str(exc))
             continue
-        if user.lower() == "/x cancel":
+
+        if command == "/x cancel" or command == "/x clear":
             clear_x_pending()
             print("\nPending X draft cancelled.")
             continue
-        if user.lower() == "/x status":
+
+        if command == "/memory":
             try:
-                account = x_oauth.account_info()
-                pending = load_x_pending()
-                print("\nX account: @" + (account.get("username","unknown") if account else "not connected"))
-                if pending:
-                    print("Pending draft: " + pending.get("text",""))
-                    print("Status: " + ("approved" if pending.get("approved") else "awaiting approval"))
-            except Exception as e:
-                print("X status error:", e)
+                print("\n" + obsidian_memory.read_memory())
+            except Exception as exc:
+                print("Memory error: " + str(exc))
             continue
-        if user.lower() == "/memory":
-            try: print("\n" + obsidian_memory.read_memory())
-            except Exception as e: print("Memory error:", e)
+
+        if command.startswith("/remember "):
+            memory_text = user[len("/remember "):].strip()
+            if not memory_text:
+                print("Memory error: provide memory text.")
+                continue
+            try:
+                obsidian_memory.append_memory("### " + memory_text)
+                print("Saved to Obsidian.")
+            except Exception as exc:
+                print("Memory error: " + str(exc))
             continue
-        if user.lower().startswith("/remember "):
-            try: obsidian_memory.append_memory("\n## Memory\n\n" + user[10:].strip()); print("Saved to Obsidian.")
-            except Exception as e: print("Memory error:", e)
-            continue
+
         try:
             memory = obsidian_memory.search_memory(user)
-        except Exception as e:
-            memory = "Obsidian memory unavailable: " + str(e)
+        except Exception as exc:
+            memory = "Obsidian memory unavailable: " + str(exc)
+            print("[Warning: " + memory + "]")
         try:
             account = x_oauth.account_info()
             if account:
-                x_context = ("\n\nX ACCOUNT STATUS: Connected. You are authorized to the X account @" +
-                    account.get("username", "unknown") + " (" + account.get("name", "unknown") + "). " +
-                    "The local X integration can check this account and publish posts through the X API. " +
-                    "Do not claim a post was published unless the X posting command/API reports success.")
+                x_context = (
+                    "\n\nX ACCOUNT STATUS: Connected. You are authorized to the X account @"
+                    + account.get("username", "unknown")
+                    + " (" + account.get("name", "unknown") + "). "
+                    + "The local X integration can check this account and publish posts through the X API. "
+                    + "Do not claim a post was published unless the X posting command/API reports success."
+                )
             else:
                 x_context = "\n\nX ACCOUNT STATUS: No X account is currently connected. The user can connect one from the launcher."
-        except Exception as e:
-            x_context = "\n\nX ACCOUNT STATUS: Unable to verify the X connection right now: " + str(e)
-        messages = [{"role":"system","content":SYSTEM + x_context + "\n\nRelevant Obsidian memory:\n" + memory}] + history + [{"role":"user","content":user}]
-        try: answer = ollama(messages)
-        except Exception as e: print("Ollama error:", e); continue
+        except Exception as exc:
+            x_context = "\n\nX ACCOUNT STATUS: Unable to verify the X connection right now: " + str(exc)
+        messages = [{"role": "system", "content": SYSTEM + x_context + "\n\nRelevant Obsidian memory:\n" + memory}] + history + [{"role": "user", "content": user}]
+        try:
+            answer = ollama(messages)
+        except Exception as exc:
+            print("Ollama error: " + str(exc))
+            continue
         print("\nStorycrafting Gamer: " + answer)
         try:
             timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
@@ -147,9 +215,10 @@ def main():
                 "\n\n**Storycrafting Gamer:** " + answer
             )
             print("[Chat logged to Obsidian]")
-        except Exception as e:
-            print("[Warning: chat was not logged to Obsidian: " + str(e) + "]")
-        history.extend([{ "role":"user", "content":user }, { "role":"assistant", "content":answer }])
+        except Exception as exc:
+            print("[Warning: chat was not logged to Obsidian: " + str(exc) + "]")
+        history.extend([{"role": "user", "content": user}, {"role": "assistant", "content": answer}])
         history = history[-12:]
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
