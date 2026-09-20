@@ -61,67 +61,35 @@ def append_memory(text):
         "targetType": "heading",
         "target": ["Storycrafting Gamer Memory"],
         "operation": "append",
-        "content": text.rstrip() + "\n"
+        "content": text.rstrip() + "\\n",
+        "createTargetIfMissing": True
     }
     try:
         return request("PATCH", path, instruction, {
-            "Content-Type": "application/vnd.olrapi.patch-instruction+json"
+            "Content-Type": "application/json"
         })
     except RuntimeError as e:
-        # Support older Local REST API plugin versions that use PATCH v1.
         if "Obsidian HTTP 400" not in str(e) and "Obsidian HTTP 415" not in str(e) and "Obsidian HTTP 422" not in str(e):
             raise
-        return request("PATCH", path, text.rstrip() + "\n", {
+        return request("PATCH", path, text.rstrip() + "\\n", {
             "Operation": "append",
             "Target-Type": "heading",
-            "Target": "Storycrafting Gamer Memory",
-            "Markdown-Patch-Version": "1",
-            "Content-Type": "text/plain"
+            "Target": "%5B%22Storycrafting%20Gamer%20Memory%22%5D",
+            "Markdown-Patch-Version": "2",
+            "Content-Type": "text/markdown"
         })
 
-def search_memory(query):
-    # The Local REST API simple-search endpoint takes the query in the URL
-    # and the search text as a plain-text POST body.
-    path = "/search/simple/?query=" + quote(query, safe="") + "&contextLength=4000"
-    return request("POST", path, query, {"Content-Type": "text/plain"})
+def append_chat_log(text):
+    ensure_note()
+    path = "/vault/" + quote(MEMORY_NOTE, safe="/")
+    instruction = {
+        "targetType": "heading",
+        "target": ["Chat Log"],
+        "operation": "append",
+        "content": text.rstrip() + "\\n",
+        "createTargetIfMissing": True
+    }
+    return request("PATCH", path, instruction, {
+        "Content-Type": "application/json"
+    })
 
-def status():
-    # The root endpoint is unauthenticated and reports plugin/server versions.
-    # Then verify the API key against an authenticated endpoint.
-    try:
-        public = request("GET", "/", require_auth=False)
-    except Exception as e:
-        return "Obsidian server check failed: " + str(e)
-    try:
-        vault = request("GET", "/vault/")
-        return "Server: " + public + "\nAuthenticated vault access: OK\nVault: " + vault
-    except Exception as e:
-        return "Server: " + public + "\nAuthenticated vault access FAILED: " + str(e)
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python memory\\obsidian_memory.py status|read|remember TEXT|search QUERY")
-        return 2
-    try:
-        cmd = sys.argv[1].lower()
-        if cmd == "status":
-            print(status())
-        elif cmd == "read":
-            print(read_memory())
-        elif cmd == "remember":
-            if len(sys.argv) < 3:
-                raise RuntimeError("Provide memory text.")
-            append_memory("\n## Memory\n\n" + " ".join(sys.argv[2:]))
-            print("Memory saved to Obsidian:", MEMORY_NOTE)
-        elif cmd == "search":
-            if len(sys.argv) < 3:
-                raise RuntimeError("Provide a search query.")
-            print(search_memory(" ".join(sys.argv[2:])))
-        else:
-            raise RuntimeError("Unknown command: " + cmd)
-        return 0
-    except Exception as e:
-        print("Obsidian memory error:", e)
-        return 1
-
-if __name__ == "__main__":
-    raise SystemExit(main())
