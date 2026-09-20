@@ -2,3 +2,4 @@ config/.env
 config/x_tokens.json
 __pycache__/
 *.pyc
+\nconfig/x_pending.json\n
