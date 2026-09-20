@@ -1,5 +1,5 @@
 config/.env
 config/x_tokens.json
+config/x_pending.json
 __pycache__/
 *.pyc
-\nconfig/x_pending.json\n
