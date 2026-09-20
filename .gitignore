@@ -1,0 +1,4 @@
+config/.env
+config/x_tokens.json
+__pycache__/
+*.pyc
