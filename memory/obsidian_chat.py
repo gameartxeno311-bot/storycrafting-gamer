@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from memory import obsidian_memory
+from social import x_oauth
 
 MODEL = "storycrafting-gamer"
 OLLAMA = "http://127.0.0.1:11434/api/chat"
@@ -17,7 +18,7 @@ def ollama(messages):
 
 def main():
     print("The Storycrafting Gamer + Obsidian Memory")
-    print("Commands: /remember TEXT, /memory, /clear, /bye")
+    print("Commands: /remember TEXT, /memory, /xstatus, /clear, /bye")
     history = []
     while True:
         try: user = input("\nYou: ").strip()
@@ -25,6 +26,16 @@ def main():
         if not user: continue
         if user.lower() in ("/bye", "/exit", "/quit"): break
         if user.lower() == "/clear": history = []; print("Conversation context cleared."); continue
+        if user.lower() == "/xstatus":
+            try:
+                account = x_oauth.account_info()
+                if account:
+                    print(f"\nX account connected: @{account.get('username', 'unknown')} ({account.get('name', 'unknown')})")
+                else:
+                    print("\nNo X account is currently connected.")
+            except Exception as e:
+                print("X status error:", e)
+            continue
         if user.lower() == "/memory":
             try: print("\n" + obsidian_memory.read_memory())
             except Exception as e: print("Memory error:", e)
@@ -37,7 +48,18 @@ def main():
             memory = obsidian_memory.search_memory(user)
         except Exception as e:
             memory = "Obsidian memory unavailable: " + str(e)
-        messages = [{"role":"system","content":SYSTEM + "\n\nRelevant Obsidian memory:\n" + memory}] + history + [{"role":"user","content":user}]
+        try:
+            account = x_oauth.account_info()
+            if account:
+                x_context = ("\n\nX ACCOUNT STATUS: Connected. You are authorized to the X account @" +
+                    account.get("username", "unknown") + " (" + account.get("name", "unknown") + "). " +
+                    "The local X integration can check this account and publish posts through the X API. " +
+                    "Do not claim a post was published unless the X posting command/API reports success.")
+            else:
+                x_context = "\n\nX ACCOUNT STATUS: No X account is currently connected. The user can connect one from the launcher."
+        except Exception as e:
+            x_context = "\n\nX ACCOUNT STATUS: Unable to verify the X connection right now: " + str(e)
+        messages = [{"role":"system","content":SYSTEM + x_context + "\n\nRelevant Obsidian memory:\n" + memory}] + history + [{"role":"user","content":user}]
         try: answer = ollama(messages)
         except Exception as e: print("Ollama error:", e); continue
         print("\nStorycrafting Gamer: " + answer)
