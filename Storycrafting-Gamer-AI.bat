@@ -17,6 +17,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+where python >nul 2>&1
+if errorlevel 1 (
+    echo Python was not found.
+    echo Install Python 3.10+ and run this file again.
+    echo.
+    pause
+    exit /b 1
+)
+
 set "MODEL=storycrafting-gamer"
 set "BASEMODEL=llama3.2"
 set "MODFILE=%TEMP%\storycrafting-gamer.Modelfile"
@@ -47,10 +56,75 @@ if errorlevel 1 (
 
 del "%MODFILE%" >nul 2>&1
 
+:menu
+cls
+echo ==========================================
+echo       THE STORYCRAFTING GAMER - AI
+echo ==========================================
 echo.
+echo 1. Chat with the AI
+echo 2. Connect / authorize X account
+echo 3. Check X connection
+echo 4. Post text to X
+echo 5. Exit
+echo.
+choice /c 12345 /n /m "Choose an option: "
+
+if errorlevel 5 goto :done
+if errorlevel 4 goto :post
+if errorlevel 3 goto :status
+if errorlevel 2 goto :connect
+if errorlevel 1 goto :chat
+
+:chat
+cls
 echo Starting The Storycrafting Gamer...
 echo Type /bye to exit.
 echo.
 ollama run "%MODEL%"
+goto :menu
 
+:connect
+cls
+echo ==========================================
+echo           CONNECT YOUR X ACCOUNT
+echo ==========================================
+echo.
+echo Before connecting, make sure config\.env contains
+echo your X OAuth 2.0 Client ID and the exact redirect URI
+echo configured in your X Developer App.
+echo.
+python social\x_oauth.py connect
+echo.
+pause
+goto :menu
+
+:status
+cls
+python social\x_oauth.py status
+echo.
+pause
+goto :menu
+
+:post
+cls
+echo ==========================================
+echo              POST TO X
+echo ==========================================
+echo.
+set "XPOST="
+set /p "XPOST=Enter the post text: "
+if not defined XPOST (
+    echo.
+    echo No text entered.
+    pause
+    goto :menu
+)
+echo.
+python social\x_oauth.py post "%XPOST%"
+echo.
+pause
+goto :menu
+
+:done
 endlocal
