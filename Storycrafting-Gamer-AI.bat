@@ -62,15 +62,23 @@ echo ==========================================
 echo       THE STORYCRAFTING GAMER - AI
 echo ==========================================
 echo.
-echo 1. Chat with the AI
+echo 1. Chat with AI + Obsidian memory
 echo 2. Connect / authorize X account
 echo 3. Check X connection
 echo 4. Post text to X
-echo 5. Exit
+echo 5. Check Obsidian connection
+echo 6. Save a memory to Obsidian
+echo 7. Read AI memory
+echo 8. Search Obsidian memory
+echo 9. Exit
 echo.
-choice /c 12345 /n /m "Choose an option: "
+choice /c 123456789 /n /m "Choose an option: "
 
-if errorlevel 5 goto :done
+if errorlevel 9 goto :done
+if errorlevel 8 goto :obsidian_search
+if errorlevel 7 goto :obsidian_read
+if errorlevel 6 goto :obsidian_remember
+if errorlevel 5 goto :obsidian_status
 if errorlevel 4 goto :post
 if errorlevel 3 goto :status
 if errorlevel 2 goto :connect
@@ -78,10 +86,10 @@ if errorlevel 1 goto :chat
 
 :chat
 cls
-echo Starting The Storycrafting Gamer...
-echo Type /bye to exit.
+echo Starting The Storycrafting Gamer with Obsidian memory...
+echo Type /bye to exit. Use /remember TEXT to save a memory.
 echo.
-ollama run "%MODEL%"
+python memory\obsidian_chat.py
 goto :menu
 
 :connect
@@ -122,6 +130,66 @@ if not defined XPOST (
 )
 echo.
 python social\x_oauth.py post "%XPOST%"
+echo.
+pause
+goto :menu
+
+:obsidian_status
+cls
+echo ==========================================
+echo          OBSIDIAN CONNECTION
+echo ==========================================
+echo.
+python memory\obsidian_memory.py status
+echo.
+pause
+goto :menu
+
+:obsidian_remember
+cls
+echo ==========================================
+echo             SAVE AI MEMORY
+echo ==========================================
+echo.
+set "MEMORY="
+set /p "MEMORY=Enter something the AI should remember: "
+if not defined MEMORY (
+    echo.
+    echo No memory entered.
+    pause
+    goto :menu
+)
+python memory\obsidian_memory.py remember "%MEMORY%"
+echo.
+pause
+goto :menu
+
+:obsidian_read
+cls
+echo ==========================================
+echo               AI MEMORY
+echo ==========================================
+echo.
+python memory\obsidian_memory.py read
+echo.
+pause
+goto :menu
+
+:obsidian_search
+cls
+echo ==========================================
+echo           SEARCH OBSIDIAN MEMORY
+echo ==========================================
+echo.
+set "QUERY="
+set /p "QUERY=Enter a search query: "
+if not defined QUERY (
+    echo.
+    echo No query entered.
+    pause
+    goto :menu
+)
+python memory\obsidian_memory.py search "%QUERY%"
 echo.
 pause
 goto :menu
