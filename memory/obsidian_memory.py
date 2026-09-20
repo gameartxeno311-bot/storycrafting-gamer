@@ -25,7 +25,7 @@ BASE_URL = ENV.get("OBSIDIAN_URL", DEFAULT_URL).rstrip("/")
 API_KEY = ENV.get("OBSIDIAN_API_KEY", "")
 MEMORY_NOTE = ENV.get("OBSIDIAN_MEMORY_NOTE", DEFAULT_NOTE)
 
-def request(method, path, data=None, headers=None):
+def request(method, path, data=None, headers=None, require_auth=True):
     if not API_KEY:
         raise RuntimeError("OBSIDIAN_API_KEY is not configured in config/.env")
     body = None if data is None else data.encode("utf-8") if isinstance(data, str) else json.dumps(data).encode("utf-8")
@@ -63,23 +63,40 @@ def append_memory(text):
         "operation": "append",
         "content": text.rstrip() + "\n"
     }
-    return request("PATCH", path, instruction, {
-        "Content-Type": "application/vnd.olrapi.patch-instruction+json"
-    })
+    try:
+        return request("PATCH", path, instruction, {
+            "Content-Type": "application/vnd.olrapi.patch-instruction+json"
+        })
+    except RuntimeError as e:
+        # Support older Local REST API plugin versions that use PATCH v1.
+        if "Obsidian HTTP 400" not in str(e) and "Obsidian HTTP 415" not in str(e) and "Obsidian HTTP 422" not in str(e):
+            raise
+        return request("PATCH", path, text.rstrip() + "\n", {
+            "Operation": "append",
+            "Target-Type": "heading",
+            "Target": "Storycrafting Gamer Memory",
+            "Markdown-Patch-Version": "1",
+            "Content-Type": "text/plain"
+        })
+
 def search_memory(query):
-    # Current Local REST API expects the search terms in the query parameter
-    # and the POST body as plain text.
+    # The Local REST API simple-search endpoint takes the query in the URL
+    # and the search text as a plain-text POST body.
     path = "/search/simple/?query=" + quote(query, safe="") + "&contextLength=4000"
     return request("POST", path, query, {"Content-Type": "text/plain"})
 
-
 def status():
-    # The root endpoint intentionally reports authenticated=false.
-    # Test the API key against an authenticated endpoint instead.
+    # The root endpoint is unauthenticated and reports plugin/server versions.
+    # Then verify the API key against an authenticated endpoint.
     try:
-        return request("GET", "/vault/")
+        public = request("GET", "/", require_auth=False)
     except Exception as e:
-        return "Obsidian API key test failed: " + str(e)
+        return "Obsidian server check failed: " + str(e)
+    try:
+        vault = request("GET", "/vault/")
+        return "Server: " + public + "\nAuthenticated vault access: OK\nVault: " + vault
+    except Exception as e:
+        return "Server: " + public + "\nAuthenticated vault access FAILED: " + str(e)
 def main():
     if len(sys.argv) < 2:
         print("Usage: python memory\\obsidian_memory.py status|read|remember TEXT|search QUERY")
