@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, ssl, sys, urllib.request
+import json, ssl, sys, urllib.request\nfrom datetime import datetime
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
