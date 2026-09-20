@@ -56,19 +56,29 @@ def read_memory():
 
 def append_memory(text):
     ensure_note()
-    path = "/vault/" + quote(MEMORY_NOTE, safe="/") + "/heading/" + quote("Storycrafting Gamer Memory", safe="")
-    return request("POST", path, text.rstrip() + "\n", {"Content-Type": "text/plain"})
-
+    path = "/vault/" + quote(MEMORY_NOTE, safe="/")
+    instruction = {
+        "targetType": "heading",
+        "target": ["Storycrafting Gamer Memory"],
+        "operation": "append",
+        "content": text.rstrip() + "\n"
+    }
+    return request("PATCH", path, instruction, {
+        "Content-Type": "application/json",
+        "Markdown-Patch-Version": "2"
+    })
 def search_memory(query):
-    path = "/search/simple/?query=" + quote(query, safe="") + "&contextLength=4000"
-    return request("POST", path, None, {"Accept": "application/json"})
-
+    return request("POST", "/search/simple/", {
+        "query": query,
+        "contextLength": 4000
+    }, {"Content-Type": "application/json"})
 def status():
-    req = urllib.request.Request(BASE_URL + "/", method="GET")
-    context = ssl._create_unverified_context()
-    with urllib.request.urlopen(req, context=context, timeout=10) as r:
-        return r.read().decode("utf-8")
-
+    # The root endpoint intentionally reports authenticated=false.
+    # Test the API key against an authenticated endpoint instead.
+    try:
+        return request("GET", "/vault/")
+    except Exception as e:
+        return "Obsidian API key test failed: " + str(e)
 def main():
     if len(sys.argv) < 2:
         print("Usage: python memory\\obsidian_memory.py status|read|remember TEXT|search QUERY")
