@@ -67,10 +67,12 @@ def append_memory(text):
         "Content-Type": "application/vnd.olrapi.patch-instruction+json"
     })
 def search_memory(query):
-    return request("POST", "/search/simple/", {
-        "query": query,
-        "contextLength": 4000
-    }, {"Content-Type": "application/json"})
+    # Current Local REST API expects the search terms in the query parameter
+    # and the POST body as plain text.
+    path = "/search/simple/?query=" + quote(query, safe="") + "&contextLength=4000"
+    return request("POST", path, query, {"Content-Type": "text/plain"})
+
+
 def status():
     # The root endpoint intentionally reports authenticated=false.
     # Test the API key against an authenticated endpoint instead.
