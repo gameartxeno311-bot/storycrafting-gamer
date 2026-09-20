@@ -198,6 +198,7 @@ def post(text):
         result = json.loads(response.read().decode("utf-8"))
     print("Post created successfully.")
     print(json.dumps(result, indent=2))
+    return result
 
 
 def account_info():
