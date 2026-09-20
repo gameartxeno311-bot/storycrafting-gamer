@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import json, ssl, sys, urllib.request\nfrom datetime import datetime
+import json, ssl, sys, urllib.request
+from datetime import datetime
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -40,6 +41,15 @@ def main():
         try: answer = ollama(messages)
         except Exception as e: print("Ollama error:", e); continue
         print("\nStorycrafting Gamer: " + answer)
+        try:
+            timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
+            obsidian_memory.append_chat_log(
+                "### " + timestamp + "\n\n**You:** " + user +
+                "\n\n**Storycrafting Gamer:** " + answer
+            )
+            print("[Chat logged to Obsidian]")
+        except Exception as e:
+            print("[Warning: chat was not logged to Obsidian: " + str(e) + "]")
         history.extend([{ "role":"user", "content":user }, { "role":"assistant", "content":answer }])
         history = history[-12:]
 
