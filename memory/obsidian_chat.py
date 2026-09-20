@@ -16,9 +16,19 @@ def ollama(messages):
     req = urllib.request.Request(OLLAMA, data=payload, method="POST", headers={"Content-Type":"application/json"})
     with urllib.request.urlopen(req, timeout=300) as r: return json.loads(r.read())["message"]["content"]
 
+PENDING_X_FILE = ROOT / "config" / "x_pending.json"
+
+def load_x_pending():
+    if not PENDING_X_FILE.exists(): return None
+    return json.loads(PENDING_X_FILE.read_text(encoding="utf-8"))
+
+def clear_x_pending():
+    try: PENDING_X_FILE.unlink()
+    except FileNotFoundError: pass
+
 def main():
     print("The Storycrafting Gamer + Obsidian Memory")
-    print("Commands: /remember TEXT, /memory, /xstatus, /clear, /bye")
+    print("Commands: /remember TEXT, /memory, /xstatus, /x draft TOPIC, /x approve, /x publish, /x cancel, /clear, /bye")
     history = []
     while True:
         try: user = input("\nYou: ").strip()
@@ -33,6 +43,73 @@ def main():
                     print(f"\nX account connected: @{account.get('username', 'unknown')} ({account.get('name', 'unknown')})")
                 else:
                     print("\nNo X account is currently connected.")
+            except Exception as e:
+                print("X status error:", e)
+            continue
+
+        if user.lower().startswith("/x draft "):
+            try:
+                memory = obsidian_memory.search_memory(user[9:].strip())
+            except Exception:
+                memory = ""
+            try:
+                account = x_oauth.account_info()
+                if not account:
+                    raise RuntimeError("No X account is connected.")
+                draft = ollama([
+                    {"role":"system","content":SYSTEM + "\nDraft exactly one X post, no commentary, maximum 280 characters."},
+                    {"role":"user","content":"Draft an X post about: " + user[9:].strip() + "\nRelevant memory:\n" + memory}
+                ]).strip().strip('"')
+                if len(draft) > 280:
+                    draft = draft[:277].rstrip() + "..."
+                PENDING_X_FILE.parent.mkdir(parents=True, exist_ok=True)
+                PENDING_X_FILE.write_text(json.dumps({"text":draft,"approved":False,"account":account.get("username",""),"created_at":datetime.now().astimezone().isoformat()}, indent=2), encoding="utf-8")
+                print("\nX DRAFT for @" + account.get("username","unknown") + ":")
+                print(draft)
+                print("\nCharacters: " + str(len(draft)))
+                print("Approve with /x approve, then publish with /x publish.")
+            except Exception as e:
+                print("X draft error:", e)
+            continue
+        if user.lower() == "/x approve":
+            try:
+                pending = load_x_pending()
+                if not pending:
+                    print("\nNo pending X draft.")
+                else:
+                    pending["approved"] = True
+                    PENDING_X_FILE.write_text(json.dumps(pending, indent=2), encoding="utf-8")
+                    print("\nX draft approved. Publish with /x publish.")
+            except Exception as e:
+                print("X approval error:", e)
+            continue
+        if user.lower() == "/x publish":
+            try:
+                pending = load_x_pending()
+                if not pending:
+                    print("\nNo pending X draft.")
+                elif not pending.get("approved"):
+                    print("\nThis draft has not been approved. Use /x approve first.")
+                else:
+                    result = x_oauth.post(pending["text"])
+                    clear_x_pending()
+                    print("\nX post published successfully.")
+                    print("Post ID: " + str(result.get("data", {}).get("id", "unknown")))
+            except Exception as e:
+                print("X publish error:", e)
+            continue
+        if user.lower() == "/x cancel":
+            clear_x_pending()
+            print("\nPending X draft cancelled.")
+            continue
+        if user.lower() == "/x status":
+            try:
+                account = x_oauth.account_info()
+                pending = load_x_pending()
+                print("\nX account: @" + (account.get("username","unknown") if account else "not connected"))
+                if pending:
+                    print("Pending draft: " + pending.get("text",""))
+                    print("Status: " + ("approved" if pending.get("approved") else "awaiting approval"))
             except Exception as e:
                 print("X status error:", e)
             continue
