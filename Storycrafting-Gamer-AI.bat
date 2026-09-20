@@ -65,7 +65,7 @@ echo.
 echo 1. Chat with AI + Obsidian memory
 echo 2. Connect / authorize X account
 echo 3. Check X connection
-echo 4. Post text to X
+echo 4. Manual admin post to X (bypasses AI approval)
 echo 5. Check Obsidian connection
 echo 6. Save a memory to Obsidian
 echo 7. Read AI memory
@@ -117,10 +117,10 @@ goto :menu
 :post
 cls
 echo ==========================================
-echo              POST TO X
+echo          MANUAL ADMIN POST TO X
 echo ==========================================
 echo.
-set "XPOST="
+echo WARNING: This direct tool bypasses the AI draft/approval workflow.\necho Use chat option 1 with /x draft, /x approve, /x publish for the protected workflow.\necho.\nset "XPOST="
 set /p "XPOST=Enter the post text: "
 if not defined XPOST (
     echo.
