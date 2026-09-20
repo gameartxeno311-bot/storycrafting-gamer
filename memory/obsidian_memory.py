@@ -64,8 +64,7 @@ def append_memory(text):
         "content": text.rstrip() + "\n"
     }
     return request("PATCH", path, instruction, {
-        "Content-Type": "application/json",
-        "Markdown-Patch-Version": "2"
+        "Content-Type": "application/vnd.olrapi.patch-instruction+json"
     })
 def search_memory(query):
     return request("POST", "/search/simple/", {
