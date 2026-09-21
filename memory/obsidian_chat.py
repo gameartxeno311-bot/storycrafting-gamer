@@ -75,9 +75,10 @@ def main():
     # Load the persistent Obsidian memory immediately when a new chat starts.
     # This gives the model its stored context before the user sends the first message.
     try:
-        startup_memory = obsidian_memory.read_memory()
+        startup_note = obsidian_memory.read_memory()
+        startup_memory = obsidian_memory.memory_context(startup_note)
         if not startup_memory.strip():
-            startup_memory = "(Obsidian memory is currently empty.)"
+            startup_memory = "(No saved memories yet.)"
         print("[Obsidian memory loaded into chat context]")
     except Exception as exc:
         startup_memory = "Obsidian memory unavailable: " + str(exc)
