@@ -67,6 +67,21 @@ def read_memory():
     ensure_note()
     return request("GET", note_path())
 
+def memory_context(note_text):
+    """Return only the persistent Memories section for model context.
+
+    Chat logs are intentionally excluded from startup context so the prompt does
+    not grow indefinitely as conversations accumulate in Obsidian.
+    """
+    text = note_text or ""
+    if "## Memories" not in text:
+        return ""
+    section = text.split("## Memories", 1)[1]
+    if "## Chat Log" in section:
+        section = section.split("## Chat Log", 1)[0]
+    return section.strip()
+
+
 def append_to_heading(heading, text):
     ensure_note()
     instruction = {
