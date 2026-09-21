@@ -71,6 +71,17 @@ def main():
     print("The Storycrafting Gamer + Obsidian Memory")
     print("Commands: /remember TEXT, /memory, /xstatus, /x posts, /x user @HANDLE, /x search QUERY, /x draft TOPIC, /x approve, /x publish, /x cancel, /x clear, /clear, /bye")
     history = []
+
+    # Load the persistent Obsidian memory immediately when a new chat starts.
+    # This gives the model its stored context before the user sends the first message.
+    try:
+        startup_memory = obsidian_memory.read_memory()
+        if not startup_memory.strip():
+            startup_memory = "(Obsidian memory is currently empty.)"
+        print("[Obsidian memory loaded into chat context]")
+    except Exception as exc:
+        startup_memory = "Obsidian memory unavailable: " + str(exc)
+        print("[Warning: " + startup_memory + "]")
     while True:
         try:
             user = input("\nYou: ").strip()
@@ -255,7 +266,17 @@ def main():
                 x_context = "\n\nX ACCOUNT STATUS: No X account is currently connected. The user can connect one from the launcher."
         except Exception as exc:
             x_context = "\n\nX ACCOUNT STATUS: Unable to verify the X connection right now: " + str(exc)
-        messages = [{"role": "system", "content": SYSTEM + x_context + "\n\nRelevant Obsidian memory:\n" + memory}] + history + [{"role": "user", "content": user}]
+        messages = [{
+            "role": "system",
+            "content": (
+                SYSTEM
+                + x_context
+                + "\n\nPersistent Obsidian memory loaded when this chat started:\n"
+                + startup_memory
+                + "\n\nMemory specifically relevant to this message:\n"
+                + memory
+            ),
+        }] + history + [{"role": "user", "content": user}]
         try:
             answer = ollama(messages)
         except Exception as exc:
