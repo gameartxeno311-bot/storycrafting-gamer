@@ -105,30 +105,45 @@ def append_chat_log(text):
     return append_to_heading("Chat Log", text)
 
 def search_memory(query):
+    """Search the persistent Memories section locally.
+
+    The memory note is small and already fetched through the authenticated vault
+    endpoint, so local matching avoids depending on the varying response shape
+    of the vault-wide /search/simple/ endpoint and prevents unrelated vault notes
+    from being injected into the AI's context.
+    """
     query = query.strip()
     if not query:
         return ""
-    path = "/search/simple/?query=" + quote(query, safe="")
-    raw = request("POST", path)
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-    if not isinstance(result, list):
-        return json.dumps(result, ensure_ascii=False)
-    snippets = []
-    for item in result[:8]:
-        if isinstance(item, str):
-            snippets.append(item)
-            continue
-        if not isinstance(item, dict):
-            continue
-        path_value = item.get("filename") or item.get("path") or item.get("file") or ""
-        matches = item.get("matches") or item.get("match") or item.get("text") or item.get("content") or ""
-        if isinstance(matches, list):
-            matches = " ".join(str(x) for x in matches)
-        snippets.append((str(path_value) + ": " if path_value else "") + str(matches))
-    return "\n\n".join(snippets)
+
+    note = read_memory()
+    memories = memory_context(note)
+    if not memories:
+        return ""
+
+    blocks = []
+    current = []
+    for line in memories.splitlines():
+        if line.startswith("### ") and current:
+            blocks.append("\n".join(current).strip())
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current).strip())
+
+    terms = [term.lower() for term in query.split() if term.strip()]
+    if not terms:
+        return ""
+
+    matches = []
+    for block in blocks:
+        haystack = block.lower()
+        if all(term in haystack for term in terms):
+            matches.append(block)
+
+    return "\n\n".join(matches[:8])
+
 
 def status():
     try:
