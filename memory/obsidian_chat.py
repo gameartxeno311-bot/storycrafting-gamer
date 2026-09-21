@@ -41,9 +41,12 @@ def current_x_account():
         raise RuntimeError("No X account is connected.")
     return account
 
+def print_x_posts(result):
+    print("\n" + x_oauth.format_posts(result))
+
 def main():
     print("The Storycrafting Gamer + Obsidian Memory")
-    print("Commands: /remember TEXT, /memory, /xstatus, /x draft TOPIC, /x approve, /x publish, /x cancel, /x clear, /clear, /bye")
+    print("Commands: /remember TEXT, /memory, /xstatus, /x posts, /x user @HANDLE, /x search QUERY, /x draft TOPIC, /x approve, /x publish, /x cancel, /x clear, /clear, /bye")
     history = []
     while True:
         try:
@@ -66,11 +69,39 @@ def main():
                 account = x_oauth.account_info()
                 pending = load_x_pending()
                 print("\nX account: @" + (account.get("username", "unknown") if account else "not connected"))
+                if account:
+                    metrics = account.get("public_metrics", {})
+                    print("Name: " + account.get("name", "unknown"))
+                    print("Bio: " + account.get("description", ""))
+                    print("Followers: " + str(metrics.get("followers_count", 0)) + " | Following: " + str(metrics.get("following_count", 0)) + " | Posts: " + str(metrics.get("tweet_count", 0)))
                 if pending:
                     print("Pending draft: " + pending.get("text", ""))
                     print("Status: " + ("approved" if pending.get("approved") else "awaiting approval"))
             except Exception as exc:
                 print("X status error:", exc)
+            continue
+
+        if command in ("/x posts", "/x mine"):
+            try:
+                print_x_posts(x_oauth.account_posts(10))
+            except Exception as exc:
+                print("X read error:", exc)
+            continue
+
+        if command.startswith("/x user "):
+            username = user[len("/x user "):].strip()
+            try:
+                print_x_posts(x_oauth.user_posts(username, 10))
+            except Exception as exc:
+                print("X user read error:", exc)
+            continue
+
+        if command.startswith("/x search "):
+            query = user[len("/x search "):].strip()
+            try:
+                print_x_posts(x_oauth.search_posts(query, 10))
+            except Exception as exc:
+                print("X search error:", exc)
             continue
 
         if command.startswith("/x draft "):
@@ -191,11 +222,11 @@ def main():
             account = x_oauth.account_info()
             if account:
                 x_context = (
-                    "\n\nX ACCOUNT STATUS: Connected. You are authorized to the X account @"
-                    + account.get("username", "unknown")
-                    + " (" + account.get("name", "unknown") + "). "
-                    + "The local X integration can check this account and publish posts through the X API. "
-                    + "Do not claim a post was published unless the X posting command/API reports success."
+                    "\n\nX ACCOUNT STATUS: Connected. You can inspect this account's profile and recent posts, "
+                    "and search public posts from other accounts. The user can request /x posts, /x user @handle, "
+                    "or /x search query. Connected account: @" + account.get("username", "unknown") +
+                    " (" + account.get("name", "unknown") + "). Do not claim you inspected X unless an X read command returned data. "
+                    "Do not claim a post was published unless the X posting command/API reports success."
                 )
             else:
                 x_context = "\n\nX ACCOUNT STATUS: No X account is currently connected. The user can connect one from the launcher."
