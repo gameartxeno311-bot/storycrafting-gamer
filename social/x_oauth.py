@@ -59,9 +59,12 @@ def request_json(url, method="GET", data=None, headers=None):
         body = urllib.parse.urlencode(data).encode()
         final_headers["Content-Type"] = "application/x-www-form-urlencoded"
     request = urllib.request.Request(url, data=body, headers=final_headers, method=method)
-    with urllib.request.urlopen(request, timeout=30) as response:
-        raw = response.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except Exception as exc:
+        raise RuntimeError(f"X API request failed: {exc}") from exc
 
 
 def refresh_token(client_id, refresh):
@@ -173,8 +176,138 @@ def api_get(path, client_id):
         API_BASE + path,
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"X API request failed: {exc}") from exc
+
+
+def api_get_with_params(path, client_id, params):
+    query = urllib.parse.urlencode(params)
+    return api_get(path + ("&" if "?" in path else "?") + query, client_id)
+
+
+def account_info():
+    """Return the currently authorized X account, or None if not connected."""
+    env = load_env()
+    client_id = env.get("X_CLIENT_ID")
+    if not client_id or not load_tokens():
+        return None
+    data = api_get_with_params(
+        "/users/me",
+        client_id,
+        {
+            "user.fields": "created_at,description,location,public_metrics,url,username,verified",
+        },
+    )
+    return data.get("data", {})
+
+
+def account_posts(max_results=10):
+    """Return recent posts from the connected X account."""
+    account = account_info()
+    if not account or not account.get("id"):
+        raise RuntimeError("No X account is connected.")
+    env = load_env()
+    client_id = env.get("X_CLIENT_ID")
+    data = api_get_with_params(
+        f"/users/{urllib.parse.quote(str(account['id']))}/tweets",
+        client_id,
+        {
+            "max_results": max(5, min(int(max_results), 100)),
+            "exclude": "retweets,replies",
+            "tweet.fields": "created_at,public_metrics,author_id,lang",
+        },
+    )
+    return {"account": account, "posts": data.get("data", []), "meta": data.get("meta", {})}
+
+
+def find_user(username):
+    """Look up an X user by username without requiring a browser session."""
+    username = username.strip().lstrip("@")
+    if not username:
+        raise RuntimeError("Provide an X username.")
+    env = load_env()
+    client_id = env.get("X_CLIENT_ID")
+    if not client_id or not load_tokens():
+        raise RuntimeError("No X account is connected.")
+    data = api_get_with_params(
+        f"/users/by/username/{urllib.parse.quote(username, safe='')}",
+        client_id,
+        {
+            "user.fields": "created_at,description,location,public_metrics,url,username,verified,protected",
+        },
+    )
+    return data.get("data", {})
+
+
+def user_posts(username, max_results=10):
+    """Return recent posts by another X user."""
+    user = find_user(username)
+    if not user or not user.get("id"):
+        raise RuntimeError(f"X user @{username.lstrip('@')} was not found.")
+    env = load_env()
+    client_id = env.get("X_CLIENT_ID")
+    data = api_get_with_params(
+        f"/users/{urllib.parse.quote(str(user['id']))}/tweets",
+        client_id,
+        {
+            "max_results": max(5, min(int(max_results), 100)),
+            "exclude": "retweets,replies",
+            "tweet.fields": "created_at,public_metrics,author_id,lang",
+        },
+    )
+    return {"account": user, "posts": data.get("data", []), "meta": data.get("meta", {})}
+
+
+def search_posts(query, max_results=10):
+    """Search public X posts matching a query. Recent Search covers the last 7 days."""
+    query = query.strip()
+    if not query:
+        raise RuntimeError("Provide an X search query.")
+    env = load_env()
+    client_id = env.get("X_CLIENT_ID")
+    if not client_id or not load_tokens():
+        raise RuntimeError("No X account is connected.")
+    data = api_get_with_params(
+        "/tweets/search/recent",
+        client_id,
+        {
+            "query": query,
+            "max_results": max(10, min(int(max_results), 100)),
+            "tweet.fields": "created_at,public_metrics,author_id,lang",
+            "expansions": "author_id",
+            "user.fields": "username,name,verified",
+        },
+    )
+    return data
+
+
+def format_posts(result):
+    """Format X API post results for the local AI context."""
+    account = result.get("account", {})
+    lines = []
+    if account:
+        lines.append(
+            f"Account: @{account.get('username', 'unknown')} ({account.get('name', 'unknown')})"
+        )
+    users = {
+        str(user.get("id")): user
+        for user in result.get("includes", {}).get("users", [])
+        if isinstance(user, dict)
+    }
+    for post in result.get("posts", result.get("data", [])):
+        author_id = str(post.get("author_id", ""))
+        author = users.get(author_id, account)
+        username = author.get("username", "unknown")
+        metrics = post.get("public_metrics", {})
+        lines.append(
+            f"@{username} | {post.get('created_at', '')} | "
+            f"likes={metrics.get('like_count', 0)} replies={metrics.get('reply_count', 0)} "
+            f"reposts={metrics.get('retweet_count', 0)} | {post.get('text', '')}"
+        )
+    return "\n".join(lines) or "No X posts found."
 
 
 def post(text):
@@ -194,21 +327,14 @@ def post(text):
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        result = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"X API post failed: {exc}") from exc
     print("Post created successfully.")
     print(json.dumps(result, indent=2))
     return result
-
-
-def account_info():
-    """Return the currently authorized X account, or None if not connected."""
-    env = load_env()
-    client_id = env.get("X_CLIENT_ID")
-    if not client_id or not load_tokens():
-        return None
-    data = api_get("/users/me", client_id)
-    return data.get("data", {})
 
 
 def status():
@@ -224,19 +350,37 @@ def status():
     try:
         user = account_info() or {}
         print(f"Connected X account: @{user.get('username', 'unknown')} ({user.get('name', 'unknown')})")
+        print(f"Profile: {user.get('description', '')}")
+        metrics = user.get("public_metrics", {})
+        if metrics:
+            print(
+                f"Followers: {metrics.get('followers_count', 0)} | "
+                f"Following: {metrics.get('following_count', 0)} | "
+                f"Posts: {metrics.get('tweet_count', 0)}"
+            )
     except Exception as exc:
         print(f"X connection check failed: {exc}")
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python social\\x_oauth.py connect|status|post \"text\"")
+        print("Usage: python social\\x_oauth.py connect|status|posts|user <username>|search <query>|post \"text\"")
         raise SystemExit(2)
     command = sys.argv[1].lower()
     if command == "connect":
         connect()
     elif command == "status":
         status()
+    elif command == "posts":
+        print(format_posts(account_posts(10)))
+    elif command == "user":
+        if len(sys.argv) < 3:
+            raise RuntimeError("Provide an X username.")
+        print(format_posts(user_posts(sys.argv[2], 10)))
+    elif command == "search":
+        if len(sys.argv) < 3:
+            raise RuntimeError("Provide an X search query.")
+        print(format_posts(search_posts(" ".join(sys.argv[2:]), 10)))
     elif command == "post":
         if len(sys.argv) < 3:
             raise RuntimeError("Provide post text.")
